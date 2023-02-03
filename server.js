@@ -46,10 +46,6 @@ fastify.get(
       // the Math.min call ensures we serve zero-byte files correctly
       const contentLength = Math.min(filesize, end - start + 1);
 
-      // since this request handler is an async fn, not returning res here
-      //   results in a race condition that causes the stream to be closed
-      //   prematurely, and a 0-length response to be sent to the client
-      // see https://www.fastify.io/docs/latest/Reference/Routes/#async-await
       res
         .code(contentLength < filesize ? 206 : 200)
         .header("Accept-Ranges", "bytes")
@@ -60,6 +56,10 @@ fastify.get(
       if (contentLength < filesize)
         res.header("Content-Range", `bytes ${start}-${end}/${filesize}`);
 
+      // since this request handler is an async fn, not returning res here
+      //   results in a race condition that causes the stream to be closed
+      //   prematurely, and a 0-length response to be sent to the client
+      // see https://www.fastify.io/docs/latest/Reference/Routes/#async-await
       return res.send(instream);
     } catch (e) {
       if (e.code === "ENOENT") res.code(404).send(e);
