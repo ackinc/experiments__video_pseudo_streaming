@@ -37,6 +37,8 @@ fastify.get(
           return res.code(416).send();
         }
       }
+
+      // we don't want to send too much at once
       end = Math.min(end, start + MAX_CHUNK_SIZE_BYTES - 1);
 
       const instream = fs.createReadStream(filepath, { start, end });
