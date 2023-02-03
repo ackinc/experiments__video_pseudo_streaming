@@ -18,21 +18,36 @@ fastify.get(
     const { download } = req.query;
     const filepath = path.join(__dirname, "static", filename);
 
-    // TODO: support range requests
-
     try {
       const { size: filesize } = await fs.promises.stat(filepath);
-      const instream = fs.createReadStream(filepath);
+
+      let start = 0;
+      let end = filesize - 1;
+      if (req.headers.range) {
+        [start, end] = req.headers.range
+          .replace("bytes=", "")
+          .split("-")
+          .map(Number);
+        if (end < start || end >= filesize) end = filesize - 1;
+      }
+      const instream = fs.createReadStream(filepath, { start, end });
+      const contentLength = end - start + 1;
 
       // since this request handler is an async fn, not returning res here
       //   results in a race condition that causes the stream to be closed
       //   prematurely, and a 0-length response to be sent to the client
       // see https://www.fastify.io/docs/latest/Reference/Routes/#async-await
-      return res
+      res
+        .code(contentLength < filesize ? 206 : 200)
+        .header("Accept-Ranges", "bytes")
         .header("Content-Type", getMimetypeFromFilename(filename))
-        .header("Content-Length", filesize)
-        .header("Content-Disposition", download ? "attachment" : "inline")
-        .send(instream);
+        .header("Content-Length", contentLength)
+        .header("Content-Disposition", download ? "attachment" : "inline");
+
+      if (contentLength < filesize)
+        res.header("Content-Range", `bytes ${start}-${end}/${filesize}`);
+
+      return res.send(instream);
     } catch (e) {
       if (e.code === "ENOENT") res.code(404).send(e);
       else throw e;
@@ -49,8 +64,6 @@ fastify.get("/page", (req, res) => {
     </html>
   `);
 });
-
-// TODO: add a route allowing user to upload files (want to simulate ENOSPC)
 
 (async () => {
   await fastify.listen({ port: 9008 });
