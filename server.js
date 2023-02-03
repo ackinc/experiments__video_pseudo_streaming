@@ -1,6 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
+const MAX_CHUNK_SIZE_BYTES = 3_000_000;
+
 const fastify = require("fastify")({ logger: { level: "debug" } });
 
 fastify.get("/", () => "OK");
@@ -22,16 +24,25 @@ fastify.get(
       const { size: filesize } = await fs.promises.stat(filepath);
 
       let start = 0;
-      let end = filesize - 1;
+      let end = Math.max(0, filesize - 1);
       if (req.headers.range) {
         [start, end] = req.headers.range
           .replace("bytes=", "")
           .split("-")
+          .filter((n) => n)
           .map(Number);
-        if (end < start || end >= filesize) end = filesize - 1;
+        end ??= Math.max(0, filesize - 1);
+
+        if (start < 0 || start >= filesize || end < start || end >= filesize) {
+          return res.code(416).send();
+        }
       }
+      end = Math.min(end, start + MAX_CHUNK_SIZE_BYTES - 1);
+
       const instream = fs.createReadStream(filepath, { start, end });
-      const contentLength = end - start + 1;
+
+      // the Math.min call ensures we serve zero-byte files correctly
+      const contentLength = Math.min(filesize, end - start + 1);
 
       // since this request handler is an async fn, not returning res here
       //   results in a race condition that causes the stream to be closed
